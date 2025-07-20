@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 from pandas import read_csv
 import parse_foil_data
 import vector_tools
+import aoa_calculation
 
 foil_data = read_csv('xf-ag03-il-50000.csv', skiprows=10)
 
@@ -19,14 +20,7 @@ def calculate_lift_and_drag(chord_vector, wind_vector):
     drag_unit_vector = vector_tools.calculate_unit_vector(wind_vector)
     lift_unit_vector = vector_tools.calculate_unit_vector(vector_tools.rotate_vector(wind_vector, 90))
 
-    try:
-        cl_at_aoa = parse_foil_data.get_c_l_from_foil_data(foil_data, aoa)
-    except ValueError:
-        cl_at_aoa = 0
-    try:
-        cd_at_aoa = parse_foil_data.get_c_d_from_foil_data(foil_data, aoa)
-    except ValueError:
-        cd_at_aoa = 0
+    cl_at_aoa, cd_at_aoa = aoa_calculation.calculate_cl_and_cd(aoa)
 
     area_of_foil = blade_height * vector_tools.calculate_magnitude_of_vector(chord_vector)
 
