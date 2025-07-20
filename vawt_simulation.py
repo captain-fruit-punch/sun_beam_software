@@ -6,9 +6,11 @@ import vector_tools
 
 foil_data = read_csv('xf-ag03-il-50000.csv', skiprows=10)
 
-blade_height = 1
-chord_vector = vector_tools.rotate_vector(np.array([1, 0]), -5) # points towards the trailing edge
-wind_vector = np.array([1, 0])
+blade_height = 0.1
+blade_radius = 0.1
+rotor_speed =  2 * 2 * np.pi  # rad/s
+
+wind_vector = np.array([4.4, 0])
 air_density = 1.225
 
 def calculate_lift_and_drag(chord_vector, wind_vector):
@@ -17,8 +19,14 @@ def calculate_lift_and_drag(chord_vector, wind_vector):
     drag_unit_vector = vector_tools.calculate_unit_vector(wind_vector)
     lift_unit_vector = vector_tools.calculate_unit_vector(vector_tools.rotate_vector(wind_vector, 90))
 
-    cl_at_aoa = parse_foil_data.get_c_l_from_foil_data(foil_data, aoa)
-    cd_at_aoa = parse_foil_data.get_c_d_from_foil_data(foil_data, aoa)
+    try:
+        cl_at_aoa = parse_foil_data.get_c_l_from_foil_data(foil_data, aoa)
+    except ValueError:
+        cl_at_aoa = 0
+    try:
+        cd_at_aoa = parse_foil_data.get_c_d_from_foil_data(foil_data, aoa)
+    except ValueError:
+        cd_at_aoa = 0
 
     area_of_foil = blade_height * vector_tools.calculate_magnitude_of_vector(chord_vector)
 
@@ -34,39 +42,67 @@ def calculate_lift_and_drag(chord_vector, wind_vector):
     chord_projection_of_force = vector_tools.calculate_projection(resultant_force, chord_vector) * vector_tools.calculate_unit_vector(chord_vector)
     return lift, drag, resultant_force, chord_projection_of_force
 
-lift, drag, resultant_force, chord_projection_of_force = calculate_lift_and_drag(chord_vector, wind_vector)
-print(lift)
-print(drag)
-print(resultant_force)
-print(chord_projection_of_force)
+# Create angles from 0 to 10 degrees with 1 degree increments
+angles = np.arange(0, 360, 2)  # 0, 1, 2, ..., 10 degrees
 
-plt.figure(figsize=(7,7))
+# Create subplots
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 7))
+
+# Plot 1: Vector visualization for each angle
 origin = np.array([0, 0])
+colors = plt.cm.viridis(np.linspace(0, 1, len(angles)))
 
-# Plot chord vector
-plt.quiver(*origin, *chord_vector, color='b', angles='xy', scale_units='xy', scale=1, label='Chord Vector')
+for i, angle in enumerate(angles):
+    # Rotate chord vector by the angle (negative to match your original -5 degrees)
+    chord_vector = vector_tools.rotate_vector(np.array([0.03, 0]), -angle)
+    chord_velocity_component = vector_tools.calculate_unit_vector(chord_vector) * rotor_speed * blade_radius
+    print("chord_velocity_component: ", chord_velocity_component)
+    wind_velocity_component = wind_vector - chord_velocity_component
+    
+    # Calculate forces
+    lift, drag, resultant_force, chord_projection_of_force = calculate_lift_and_drag(chord_vector, wind_velocity_component)
+    
+    # Plot chord vector
+    ax1.quiver(*origin, *chord_vector, color=colors[i], angles='xy', scale_units='xy', scale=1, 
+               alpha=0.7, label=f'{angle}°')
+    
+    # Plot chord projection of force
+    ax1.quiver(*origin, *chord_projection_of_force, color=colors[i], angles='xy', scale_units='xy', scale=1,
+               alpha=0.5, linestyle='--', linewidth=2)
 
-# Plot wind vector
-plt.quiver(*origin, *wind_vector, color='g', angles='xy', scale_units='xy', scale=1, label='Wind Vector')
+# Plot wind vector (same for all cases)
+ax1.quiver(*origin, *wind_vector, color='g', angles='xy', scale_units='xy', scale=1, 
+           label='Wind Vector', linewidth=3)
 
-# Plot lift vector
-plt.quiver(*origin, *lift, color='r', angles='xy', scale_units='xy', scale=1, label='Lift')
+ax1.set_xlim(-0.03, 0.03)
+ax1.set_ylim(-0.03, 0.03)
+ax1.grid(True, alpha=0.3)
+ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+ax1.set_title('Chord Vector Rotation and Force Projections')
+ax1.set_xlabel('X')
+ax1.set_ylabel('Y')
+ax1.set_aspect('equal', adjustable='box')
 
-# Plot drag vector
-plt.quiver(*origin, *drag, color='m', angles='xy', scale_units='xy', scale=1, label='Drag')
+# Plot 2: Magnitude of chord projection vs angle
+chord_projection_magnitudes = []
+for angle in angles:
+    chord_vector = vector_tools.rotate_vector(np.array([1, 0]), -angle)
+    lift, drag, resultant_force, chord_projection_of_force = calculate_lift_and_drag(chord_vector, wind_vector)
+    magnitude = vector_tools.calculate_magnitude_of_vector(chord_projection_of_force)
+    chord_projection_magnitudes.append(magnitude)
 
-# Plot resultant force
-plt.quiver(*origin, *resultant_force, color='y', angles='xy', scale_units='xy', scale=1, label='Resultant Force')
+ax2.plot(angles, chord_projection_magnitudes, 'bo-', linewidth=2, markersize=8)
+ax2.set_xlabel('Chord Angle (degrees)')
+ax2.set_ylabel('Chord Projection Force Magnitude')
+ax2.set_title('Chord Projection Force vs Chord Angle')
+ax2.grid(True, alpha=0.3)
+ax2.set_xlim(0, 360)
 
-# Plot chord projection of force
-plt.quiver(*origin, *chord_projection_of_force, color='c', angles='xy', scale_units='xy', scale=1, label='Chord Projection of Force')
-
-plt.xlim(-2, 2)
-plt.ylim(-2, 2)
-plt.grid(True)
-plt.legend()
-plt.title('Visualization of Lift, Drag, Chord, and Wind Vectors')
-plt.xlabel('X')
-plt.ylabel('Y')
-plt.gca().set_aspect('equal', adjustable='box')
+plt.tight_layout()
 plt.show()
+
+# Print numerical results
+print("Angle (deg) | Chord Projection Force Magnitude")
+print("-" * 45)
+for angle, magnitude in zip(angles, chord_projection_magnitudes):
+    print(f"{angle:10.0f} | {magnitude:25.6f}")
