@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 from pandas import read_csv
 import parse_foil_data
 import vector_tools
-from matplotlib.animation import FuncAnimation
 
 foil_data = read_csv('xf-ag03-il-50000.csv', skiprows=10)
 
@@ -35,56 +34,6 @@ def calculate_lift_and_drag(chord_vector, wind_vector):
     chord_projection_of_force = vector_tools.calculate_projection(resultant_force, chord_vector) * vector_tools.calculate_unit_vector(chord_vector)
     return lift, drag, resultant_force, chord_projection_of_force
 
-# Animation function
-def animate_rotation(frame):
-    # Clear the previous frame
-    plt.clf()
-    
-    # Calculate rotation angle (0 to 360 degrees)
-    angle = frame * 360 / 100  # 100 frames for full rotation
-    
-    # Rotate the chord vector
-    rotated_chord = vector_tools.rotate_vector(np.array([1, 0]), angle - 5)  # -5 for initial offset
-    
-    # Calculate forces for this rotation
-    lift, drag, resultant_force, chord_projection_of_force = calculate_lift_and_drag(rotated_chord, wind_vector)
-    
-    origin = np.array([0, 0])
-    
-    # Plot chord vector
-    plt.quiver(*origin, *rotated_chord, color='b', angles='xy', scale_units='xy', scale=1, label='Chord Vector')
-    
-    # Plot wind vector
-    plt.quiver(*origin, *wind_vector, color='g', angles='xy', scale_units='xy', scale=1, label='Wind Vector')
-    
-    # Plot lift vector
-    plt.quiver(*origin, *lift, color='r', angles='xy', scale_units='xy', scale=1, label='Lift')
-    
-    # Plot drag vector
-    plt.quiver(*origin, *drag, color='m', angles='xy', scale_units='xy', scale=1, label='Drag')
-    
-    # Plot resultant force
-    plt.quiver(*origin, *resultant_force, color='y', angles='xy', scale_units='xy', scale=1, label='Resultant Force')
-    
-    # Plot chord projection of force
-    plt.quiver(*origin, *chord_projection_of_force, color='c', angles='xy', scale_units='xy', scale=1, label='Chord Projection of Force')
-    
-    plt.xlim(-2, 2)
-    plt.ylim(-2, 2)
-    plt.grid(True)
-    plt.legend()
-    plt.title(f'VAWT Blade Rotation - Angle: {angle:.1f}°')
-    plt.xlabel('X')
-    plt.ylabel('Y')
-    plt.gca().set_aspect('equal', adjustable='box')
-
-# Create the animation
-fig, ax = plt.subplots(figsize=(10, 10))
-ani = FuncAnimation(fig, animate_rotation, frames=100, interval=100, repeat=True)
-
-plt.show()
-
-# Keep the original static plot for reference
 lift, drag, resultant_force, chord_projection_of_force = calculate_lift_and_drag(chord_vector, wind_vector)
 print(lift)
 print(drag)
