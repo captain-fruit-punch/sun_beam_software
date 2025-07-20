@@ -1,0 +1,10 @@
+Xfoil polar. Reynolds number fixed. Mach  number fixed
+Polar key,xf-ag03-il-50000
+Airfoil,ag03-il
+Reynolds number,50000
+Ncrit,9
+Mach,0
+Max Cl/Cd,32.6986
+Max Cl/Cd alpha,4.75
+Url,http://airfoiltools.com/polar/csv?polar=xf-ag03-il-50000
+
