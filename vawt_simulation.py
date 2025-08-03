@@ -1,11 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from pandas import read_csv
-import parse_foil_data
 import vector_tools
 import aoa_calculation
-
-foil_data = read_csv('xf-ag03-il-50000.csv', skiprows=10)
 
 blade_height = 0.1
 blade_radius = 0.1
