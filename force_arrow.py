@@ -117,7 +117,7 @@ class ForceArrowWindow:
         # Color palette for different force types
         self.force_colors = ['red', 'green', 'orange', 'purple', 'brown', 'pink']
         
-    def add_body(self, x: float, y: float, radius: float = 0.5, 
+    def add_body(self, x: float, y: float, radius: float = 1.5, 
                  color: str = 'blue', label: str = "") -> Body:
         """Add a body to the simulation."""
         body = Body(x, y, radius, color, label)
