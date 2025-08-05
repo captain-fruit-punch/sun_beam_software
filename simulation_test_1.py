@@ -124,7 +124,7 @@ def step(state, dt, params):
         
         # Calculate chord vector
         c = perpendicular_to_r
-        angle_from_r = angle_command * np.pi / 180
+        angle_from_r = angle_command
         c = calc_rotate_vector(c, angle_from_r)
         
         # Calculate angle of attack
@@ -250,6 +250,11 @@ def simulate_data_with_animation():
     aoa_win.resize(800, 400)
     aoa_win.show()
     
+    # Angle command graph
+    angle_command_win = pg.GraphicsLayoutWidget(title="Angle Command vs Time")
+    angle_command_win.resize(800, 400)
+    angle_command_win.show()
+    
     # Create the plots
     torque_plot = torque_win.addPlot(title="Torque T Over Time")
     torque_plot.setLabel('left', 'Torque T (N⋅m)')
@@ -271,12 +276,17 @@ def simulate_data_with_animation():
     aoa_plot.setLabel('bottom', 'Time (s)')
     aoa_plot.showGrid(x=True, y=True)
     
+    angle_command_plot = angle_command_win.addPlot(title="Angle Command Over Time")
+    angle_command_plot.setLabel('left', 'Angle Command (degrees)')
+    angle_command_plot.setLabel('bottom', 'Time (s)')
+    angle_command_plot.showGrid(x=True, y=True)
+    
     # Initialize curves for plotting
     torque_curve = torque_plot.plot(pen='red', name='Torque T')
     cd_curve = cd_plot.plot(pen='green', name='CD')
     cl_curve = cl_plot.plot(pen='blue', name='CL')
     aoa_curve = aoa_plot.plot(pen='orange', name='AOA')
-    
+    angle_command_curve = angle_command_plot.plot(pen='purple', name='Angle Command')
     # Initial state
     state = {
         'A': np.array([0.0, 0.0, 0.0]),
@@ -294,8 +304,8 @@ def simulate_data_with_animation():
         'angle_command': 6.6 * np.pi / 180  # 1 degree in radians
     }
     
-    dt = 0.001
-    seconds = 1000
+    dt = 0.000002
+    seconds = 5
     steps = int(seconds / dt)
     
     # Add bodies to visualization
@@ -312,10 +322,28 @@ def simulate_data_with_animation():
         # Store previous state for force calculation
         prev_state = state.copy()
         
+        
         # Update simulation
+        corrected_angle_command = params['angle_command']
+        if True:
+            best_angle_command = 0
+            best_torque = -np.inf
+            for i in np.linspace(-7, 7, 200):
+                params['angle_command'] = i * np.pi / 180
+                state, state_information = step(state, dt, params)
+                new_torque = state_information['T'][2]
+                if new_torque > best_torque:
+                    best_torque = new_torque
+                    best_angle_command = i * np.pi / 180
+            corrected_angle_command = best_angle_command
+            print(f"Best angle command: {best_angle_command * 180 / np.pi}")
+        
+        params['angle_command'] = corrected_angle_command
+        
         state, state_information = step(state, dt, params)
         
         # Add time to state_information for dataframe
+        state_information['angle_command'] = params['angle_command'] * 180 / np.pi
         state_information['time'] = current_time
         df = df._append(state_information, ignore_index=True)
         
@@ -329,6 +357,7 @@ def simulate_data_with_animation():
             cd_curve.setData(df['time'], df['C_d'])
             cl_curve.setData(df['time'], df['C_l'])
             aoa_curve.setData(df['time'], df['aoa'] * 180 / np.pi)
+            angle_command_curve.setData(df['time'], df['angle_command'])
         
         # Update body positions in visualization
         viz.update_body_position(0, state['A'][0], state['A'][1])  # Point A
@@ -368,7 +397,7 @@ def simulate_data_with_animation():
         print(f"Step {i+1}:", state['B'])
         
         # Small delay for animation
-        #time.sleep(0.001)
+        #time.sleep(0.05)
         # Process Qt events to keep the window responsive
         viz.app.processEvents()
     
