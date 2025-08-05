@@ -114,14 +114,14 @@ def step(state, dt, params):
         q_inf = 0.5 * rho_inf * np.linalg.norm(V_rel) ** 2
         
         # Calculate optimal angle command
-        c = calc_rotate_vector(r, -90 * np.pi / 180)
+        c = calc_rotate_vector(r, 90 * np.pi / 180)
         c = c / np.linalg.norm(c) * c_len
-        optimal_angle_command = calc_angle_between_vectors(-c, V_rel)
+        # optimal_angle_command = calc_angle_between_vectors(-c, V_rel)
         
-        print(f"Optimal angle command: {optimal_angle_command * 180 / np.pi}")
+        # print(f"Optimal angle command: {optimal_angle_command * 180 / np.pi}")
         
         # Calculate chord vector
-        angle_from_r = optimal_angle_command + angle_command * np.pi / 180
+        angle_from_r = angle_command * np.pi / 180
         c = calc_rotate_vector(c, angle_from_r)
         
         # Calculate angle of attack
