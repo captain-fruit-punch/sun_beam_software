@@ -114,13 +114,16 @@ def step(state, dt, params):
         q_inf = 0.5 * rho_inf * np.linalg.norm(V_rel) ** 2
         
         # Calculate optimal angle command
-        c = calc_rotate_vector(r, 90 * np.pi / 180)
-        c = c / np.linalg.norm(c) * c_len
-        # optimal_angle_command = calc_angle_between_vectors(-c, V_rel)
+        perpendicular_to_r = calc_rotate_vector(r, 90 * np.pi / 180)
+        perpendicular_to_r = perpendicular_to_r / np.linalg.norm(perpendicular_to_r) * c_len
+        
+        optimal_vector = - V_rel / np.linalg.norm(V_rel) * c_len
+        optimal_angle_command = calc_angle_between_vectors(perpendicular_to_r, optimal_vector)
         
         # print(f"Optimal angle command: {optimal_angle_command * 180 / np.pi}")
         
         # Calculate chord vector
+        c = perpendicular_to_r
         angle_from_r = angle_command * np.pi / 180
         c = calc_rotate_vector(c, angle_from_r)
         
@@ -288,7 +291,7 @@ def simulate_data_with_animation():
         'c_len': 0.1,
         'area': 0.1 * 0.1,  # c_len * 0.1
         'inertia': np.array([0.1, 0.1, 0.1]),
-        'angle_command': 5 * np.pi / 180  # 1 degree in radians
+        'angle_command': 6.6 * np.pi / 180  # 1 degree in radians
     }
     
     dt = 0.001
