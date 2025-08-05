@@ -5,6 +5,16 @@ import time
 from PyQt5 import QtWidgets, QtCore
 import pyqtgraph as pg
 
+def calc_angle_between_vectors(v, w):
+    angle = np.arctan2(v[0] * w[1] - v[1] * w[0], v[0] * w[0] + v[1] * w[1])
+    return angle
+
+def calc_rotate_vector(v, angle):
+    return np.array([
+        np.cos(angle) * v[0] - np.sin(angle) * v[1],
+        np.sin(angle) * v[0] + np.cos(angle) * v[1], 
+        0.0
+    ])
 
 def get_lift_coefficient(alpha):
     """
@@ -29,7 +39,7 @@ def get_drag_coefficient(alpha):
     For negative alpha values, returns the same result as positive alpha (symmetric).
     """
     # Load the data
-    data = pd.read_csv('cd_vs_alpha.csv')
+    data = pd.read_csv('cd_vs_alpha_corrected.csv')
     alphas = data['alpha'].values
     cds = data['cd'].values
     
@@ -103,20 +113,19 @@ def step(state, dt, params):
         # Calculate dynamic pressure
         q_inf = 0.5 * rho_inf * np.linalg.norm(V_rel) ** 2
         
-        # Calculate chord vector
-        ninety_deg = 90 * np.pi / 180
-        angle_from_r = angle_command + ninety_deg
-        c = np.array([
-            np.cos(angle_from_r) * r[0] - np.sin(angle_from_r) * r[1],
-            np.sin(angle_from_r) * r[0] + np.cos(angle_from_r) * r[1], 
-            0.0
-        ])
+        # Calculate optimal angle command
+        c = calc_rotate_vector(r, -90 * np.pi / 180)
         c = c / np.linalg.norm(c) * c_len
+        optimal_angle_command = calc_angle_between_vectors(V_rel, c)
+        
+        print(f"Optimal angle command: {optimal_angle_command * 180 / np.pi}")
+        
+        # Calculate chord vector
+        angle_from_r = optimal_angle_command
+        c = calc_rotate_vector(c, angle_from_r)
         
         # Calculate angle of attack
-        v_ = V_rel
-        w_ = -c
-        aoa = np.arctan2(v_[0] * w_[1] - v_[1] * w_[0], v_[0] * w_[0] + v_[1] * w_[1])
+        aoa = calc_angle_between_vectors(V_rel, -c) + angle_command * np.pi / 180
         if aoa > np.pi / 2:
             aoa = np.pi - aoa
         
@@ -274,7 +283,7 @@ def simulate_data_with_animation():
     
     # Simulation parameters
     params = {
-        'V_inf': np.array([1, 0.0, 0.0]),
+        'V_inf': np.array([4.4, 0.0, 0.0]),
         'rho_inf': 1.0,
         'c_len': 0.1,
         'area': 0.1 * 0.1,  # c_len * 0.1
@@ -282,8 +291,9 @@ def simulate_data_with_animation():
         'angle_command': 1 * np.pi / 180  # 1 degree in radians
     }
     
-    dt = 0.01
-    seconds = 100
+    dt = 0.001
+    seconds = 1000
+    steps = int(seconds / dt)
     
     # Add bodies to visualization
     body_A = viz.add_body(state['A'][0], state['A'][1], 1, 'blue', "A (Pivot)")
@@ -292,9 +302,10 @@ def simulate_data_with_animation():
     print("Initial state:", state['B'])
     
     # Simulation loop with animation
-    for i in range(int(seconds / dt)):
+    for i in range(steps):
         current_time = i * dt
-        
+        if i + 1 > steps:
+            break
         # Store previous state for force calculation
         prev_state = state.copy()
         
@@ -306,8 +317,8 @@ def simulate_data_with_animation():
         df = df._append(state_information, ignore_index=True)
         
         # Update plots using dataframe data (only show last 1000 points to prevent memory issues)
-        if len(df) > 1000:
-            df = df.tail(1000)
+        if len(df) > steps:
+            df = df.tail(steps)
         
         # Update all plots with dataframe data
         if len(df) > 0:
@@ -338,7 +349,7 @@ def simulate_data_with_animation():
         # Add angular velocity indicator at point A
         viz.add_force(body_A, 0, state['omega'][2], 'cyan', 1, "ω")
         
-        force_scale = 10
+        force_scale = 1
         viz.add_force(body_B, state_information['L'][0], state_information['L'][1], 'red', force_scale, "L")
         viz.add_force(body_B, state_information['D'][0], state_information['D'][1], 'blue', force_scale, "D")
         viz.add_force(body_B, state_information['E'][0], state_information['E'][1], 'green', force_scale, "E")
