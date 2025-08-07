@@ -5,6 +5,7 @@ import time
 from PyQt5 import QtWidgets, QtCore
 import pyqtgraph as pg
 import matplotlib.pyplot as plt
+from motor_model import MotorModel
 
 def calc_angle_between_vectors(v, w):
     angle = np.arctan2(v[0] * w[1] - v[1] * w[0], v[0] * w[0] + v[1] * w[1])
@@ -115,6 +116,12 @@ def step(state, dt, params):
     # Calculate velocity at blade tip
     V = - np.cross(omega, r)
     V_rel = V + V_inf
+    
+    # Motor model
+    motor_state = state['motor_state']
+    motor_params = params['motor_params']
+    motor_params['target_theta'] = angle_command
+    new_motor_state, motor_state_info = MotorModel.step(motor_state, motor_params, dt)
 
     if np.linalg.norm(V_rel) != 0.0:
         
@@ -126,13 +133,10 @@ def step(state, dt, params):
         perpendicular_to_r = perpendicular_to_r / np.linalg.norm(perpendicular_to_r) * c_len
         
         optimal_vector = - V_rel / np.linalg.norm(V_rel) * c_len
-        optimal_angle_command = calc_angle_between_vectors(perpendicular_to_r, optimal_vector)
-        
-        # print(f"Optimal angle command: {optimal_angle_command * 180 / np.pi}")
         
         # Calculate chord vector
         c = perpendicular_to_r
-        angle_from_r = angle_command
+        angle_from_r = motor_state_info['theta']
         c = calc_rotate_vector(c, angle_from_r)
         
         # Calculate angle of attack
@@ -176,7 +180,8 @@ def step(state, dt, params):
     new_state = {
         'A': A,
         'B': B_new,
-        'omega': new_omega
+        'omega': new_omega,
+        'motor_state': new_motor_state
     }
     
     state_information['alpha'] = alpha[2]
@@ -195,7 +200,7 @@ def step(state, dt, params):
     state_information['T'] = T
     state_information['aoa'] = aoa
     state_information['power'] = omega[2] * T[2]
-    
+    state_information['motor_state_info'] = motor_state_info
     # Return updated state
     return new_state, state_information
 
@@ -295,20 +300,33 @@ def simulate_data_with_animation():
     power_avg_plot.showGrid(x=True, y=True)
     power_avg_plot.addLegend()
     
+    # Row 2, Column 2: Motor Torque
+    motor_torque_plot = combined_win.addPlot(row=2, col=2, title="Motor Torque vs Time")
+    motor_torque_plot.setLabel('left', 'Motor Torque (N⋅m)')
+    motor_torque_plot.setLabel('bottom', 'Time (s)')
+    motor_torque_plot.showGrid(x=True, y=True)
+    motor_torque_plot.addLegend()
+    
     # Initialize curves for plotting
     torque_curve = torque_plot.plot(pen='red', name='Torque T')
     cd_curve = cd_plot.plot(pen='green', name='CD')
     cl_curve = cl_plot.plot(pen='blue', name='CL')
     aoa_curve = aoa_plot.plot(pen='orange', name='AOA')
     angle_command_curve = angle_command_plot.plot(pen='purple', name='Angle Command')
+    motor_theta_curve = angle_command_plot.plot(pen='brown', name='Motor Theta')
     angular_velocity_curve = angular_velocity_plot.plot(pen='brown', name='Angular Velocity')
     power_curve = power_plot.plot(pen='yellow', name='Power')
     power_avg_curve = power_avg_plot.plot(pen='red', name='Power Running Average')
+    motor_torque_curve = motor_torque_plot.plot(pen='blue', name='Motor Torque')
     # Initial state
+    motor_state = MotorModel.make_state(0,0,0)
+    motor_params = MotorModel.make_params(0, 2, [], 0.001, 0, 191, 0.2, 26)
+    
     state = {
         'A': np.array([0.0, 0.0, 0.0]),
         'B': np.array([0.0, -1.0, 0.0]),  # turbine_radius = 1   
-        'omega': np.array([0.0, 0.0, 0.0])  # start_speed = -0.3
+        'omega': np.array([0.0, 0.0, 0.0]),  # start_speed = -0.3
+        'motor_state': motor_state
     }
     
     # Simulation parameters
@@ -318,10 +336,13 @@ def simulate_data_with_animation():
         'c_len': 0.1,
         'area': 0.1 * 0.1,  # c_len * 0.1
         'inertia': np.array([0.1, 0.1, 0.01]),
-        'angle_command': 3 * np.pi / 180  # 1 degree in radians
+        'angle_command': 3 * np.pi / 180,  # 1 degree in radians
+        'motor_params': motor_params
     }
     
-    dt = 0.01
+    motor_state_info_array = {}
+    
+    dt = 0.001
     seconds = 40
     steps = int(seconds / dt)
     
@@ -342,8 +363,7 @@ def simulate_data_with_animation():
             break
         # Store previous state for force calculation
         prev_state = state.copy()
-        
-        
+        params['motor_params']['time'] = current_time
         # Update simulation
         corrected_angle_command = params['angle_command']
         if True:
@@ -363,6 +383,9 @@ def simulate_data_with_animation():
         
         state, state_information = step(state.copy(), dt, params)
 
+        #print(state_information['motor_state_info'])
+        motor_state_info_array = MotorModel.copy_state_info_to_array(state_information['motor_state_info'], motor_state_info_array)
+
         # Add time to state_information for dataframe
         state_information['angle_command'] = params['angle_command'] * 180 / np.pi
         state_information['time'] = current_time
@@ -374,13 +397,16 @@ def simulate_data_with_animation():
         
         # Update all plots with dataframe data
         if len(df) > 0:
+            #print(motor_state_info_array)
             torque_curve.setData(df['time'], df['T'].apply(lambda x: x[2]))
             cd_curve.setData(df['time'], df['C_d'])
             cl_curve.setData(df['time'], df['C_l'])
             aoa_curve.setData(df['time'], df['aoa'] * 180 / np.pi)
             angle_command_curve.setData(df['time'], df['angle_command'])
+            motor_theta_curve.setData(motor_state_info_array['time'], np.array(motor_state_info_array['theta']) * (180 / np.pi))
             angular_velocity_curve.setData(df['time'], df['omega'])
             power_curve.setData(df['time'], df['power'])
+            motor_torque_curve.setData(motor_state_info_array['time'], np.array(motor_state_info_array['error_v']))
             
             # Calculate and plot running average of power
             power_history.append(state_information['power'])

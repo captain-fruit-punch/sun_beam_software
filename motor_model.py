@@ -1,5 +1,5 @@
 import numpy as np
-
+import copy
 class MotorModel:
     def make_state(theta, omega, error_i):
         new_state = {
@@ -9,8 +9,8 @@ class MotorModel:
         }
         return new_state
     
-    def make_perams(time, target_theta, torque_speed, inertia, input_torque, P, D, I):
-        new_perams = {
+    def make_params(time, target_theta, torque_speed, inertia, input_torque, P, D, I):
+        new_params = {
             'time': time,
             'target_theta': target_theta,
             'torque_speed': torque_speed,
@@ -20,7 +20,7 @@ class MotorModel:
             'D': D,
             'I': I
         }
-        return new_perams
+        return new_params
         
     def make_state_info(time, theta, omega, alpha, error_p, error_v, error_i, tau_out, target_omega):
         new_state_info = {
@@ -49,63 +49,149 @@ class MotorModel:
         
         return new_state_info_array
     
-    def step(state, perams, dt):
-        error_p = perams['target_theta'] - state['theta']
-        target_omega = perams['P'] * error_p
+    def make_motor_torque_speed(max_speed, max_torque):
+        """
+        Creates a motor torque-speed function that takes omega and tau as inputs
+        and returns output_tau with the following constraints:
+        - Maximum bounds follow slope of max_torque/max_speed with intercept at max_torque
+        - Absolute maximum is max_torque
+        """
+        # Calculate the slope for the torque-speed characteristic
+        slope = max_torque / max_speed
+        
+        def motor_torque_speed(omega, tau):
+            """
+            Motor torque-speed function
+            
+            Args:
+                omega: angular velocity (rad/s)
+                tau: input torque (N⋅m)
+            
+            Returns:
+                output_tau: output torque (N⋅m) constrained by motor limits
+            """
+            # Calculate the maximum available torque at current speed
+            # This follows the line: tau_max = max_torque - slope * omega
+            # When omega = 0, tau_max = max_torque
+            # When omega = max_speed, tau_max = 0
+            max_available_torque = max_torque - slope * abs(omega)
+            print(f"max_available_torque: {max_available_torque}")
+            print(f"tau: {tau}")
+            output_tau = min(max_available_torque, abs(tau))
+            print(f"output_tau: {output_tau}")
+            if abs(tau) < 0 and output_tau > 0:
+                print(f"tau: {tau} is negative and output_tau: {output_tau} is positive")
+            return output_tau * np.sign(tau)
+        
+        return motor_torque_speed
+    
+    def step(state, params, dt):
+        error_p = params['target_theta'] - state['theta']
+        target_omega = params['P'] * error_p
         error_v = target_omega - state['omega']
         error_i = state['error_i'] + error_v * dt
-        tau_out = perams['I'] * error_i + perams['D'] * error_v
-        alpha = tau_out / perams['inertia']
+        tau_out = params['I'] * error_i + params['D'] * error_v
+        #tau_out = params['torque_speed'](state['omega'], tau_out)
+        alpha = tau_out / params['inertia']
         omega = state['omega'] + alpha * dt
         theta = state['theta'] + omega * dt
-        new_state_info = MotorModel.make_state_info(perams['time'], theta, omega, alpha, error_p, error_v, error_i, tau_out, target_omega)
+        new_state_info = MotorModel.make_state_info(params['time'], theta, omega, alpha, error_p, error_v, error_i, tau_out, target_omega)
         new_state = MotorModel.make_state(theta, omega, error_i)
         
         return new_state, new_state_info
     
-if __name__ == "__main__":
-    state = MotorModel.make_state(0,0,0)
-    perams = MotorModel.make_perams(0, 2*np.pi, [], 0.1, 0, 1, 0.1, 0)
     
-    import matplotlib.pyplot as plt
-    
-    time_step = 0.1
-    simulation_length = 100
+def test_motor_model(params, state, time_step, simulation_length):
     num_steps = int(simulation_length / time_step)
     cur_time = 0
-    
     state_info_array = {}
-    
     for i in range(num_steps):
-        new_state, new_state_info = MotorModel.step(state, perams, time_step)
+        params['time'] = cur_time
+        new_state, new_state_info = MotorModel.step(state, params, time_step)
         new_state_info_array = MotorModel.copy_state_info_to_array(new_state_info, state_info_array)
         state = new_state
         state_info_array = new_state_info_array
-        perams['time'] = cur_time
         cur_time += time_step
-        
+    
+    return state_info_array
+
+def optimize_pid_params(time_range, P_range, D_range, I_range, params, state, time_step):
+    best_state_info_array = {}
+    best_params = params
+    best_final_error = np.inf
+    time_range = np.flip(time_range)
+    for time in time_range:
+        for P in P_range:
+            for D in D_range:
+                for I in I_range:
+                    test_params = copy.deepcopy(params)
+                    test_params['P'] = P
+                    test_params['D'] = D
+                    test_params['I'] = I
+                    state_info_array = test_motor_model(test_params, state, time_step, time)
+                    final_error = abs(state_info_array['error_p'][-1])
+                    print(f"Test params: P={P}, D={D}, I={I}, time={time}, final_error={final_error}", end = " - ")
+                    if final_error < best_final_error:
+                        best_final_error = final_error
+                        best_params = test_params
+                        best_state_info_array = state_info_array
+                        print(f"New best params: P={P}, D={D}, I={I}, time={time}, final_error={final_error}")
+                        
+    print(f"Best params: P={best_params['P']}, D={best_params['D']}, I={best_params['I']}, final_error={best_final_error}")
+    return best_params, best_state_info_array
+
+if __name__ == "__main__":
+    state = MotorModel.make_state(0,0,0)
+    max_rpm = 1000 * 2 * np.pi / 60
+    max_torque = 0.1
+    torque_speed_function = MotorModel.make_motor_torque_speed(max_rpm, max_torque)
+    params = MotorModel.make_params(0, 0.1, torque_speed_function, 0.001, 0, 191, 1, 26)
+    
+    import matplotlib.pyplot as plt
+    
+    time_step = 0.001
+    simulation_length = 5
+    num_steps = int(simulation_length / time_step)
+    cur_time = 0
+    
+    #best_params, best_state_info_array = optimize_pid_params(np.arange(0.1, 1, 0.1), np.arange(185, 200, 1), np.arange(0.1, 3, .1), np.arange(21, 30, 0.5), params, state, time_step)
+    best_state_info_array = test_motor_model(params, state, time_step, simulation_length)
     
     # Create vertical subplots for theta, omega, and tau_out
-    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 8))
+    fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(10, 8))
     
     # Plot theta
-    ax1.plot(state_info_array['time'], state_info_array['theta'])
+    ax1.plot(best_state_info_array['time'], best_state_info_array['theta'])
     ax1.set_ylabel('Theta (rad)')
     ax1.set_title('Theta vs Time')
     ax1.grid(True)
     
     # Plot omega
-    ax2.plot(state_info_array['time'], state_info_array['omega'])
+    ax2.plot(best_state_info_array['time'], best_state_info_array['omega'])
     ax2.set_ylabel('Omega (rad/s)')
     ax2.set_title('Omega vs Time')
     ax2.grid(True)
     
     # Plot tau_out
-    ax3.plot(state_info_array['time'], state_info_array['tau_out'])
+    ax3.plot(best_state_info_array['time'], best_state_info_array['tau_out'])
     ax3.set_xlabel('Time (s)')
     ax3.set_ylabel('Tau_out (N⋅m)')
     ax3.set_title('Tau_out vs Time')
     ax3.grid(True)
+    
+    # Plot error_v
+    ax4.plot(best_state_info_array['time'], best_state_info_array['error_v'])
+    ax4.set_xlabel('Time (s)')
+    ax4.set_ylabel('Error_v (rad/s)')
+    ax4.set_title('Error_v vs Time')
+    ax4.grid(True)
+    
+    # Plot error_p
+    ax5.plot(best_state_info_array['time'], best_state_info_array['error_p'])
+    ax5.set_xlabel('Time (s)')
+    ax5.set_ylabel('Error_p (rad)')
+    ax5.set_title('Error_p vs Time')
+    ax5.grid(True)
     
     plt.tight_layout()
     plt.show()
