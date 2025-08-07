@@ -75,12 +75,12 @@ class MotorModel:
             # When omega = 0, tau_max = max_torque
             # When omega = max_speed, tau_max = 0
             max_available_torque = max_torque - slope * abs(omega)
-            print(f"max_available_torque: {max_available_torque}")
-            print(f"tau: {tau}")
+            # print(f"max_available_torque: {max_available_torque}")
+            # print(f"tau: {tau}")
             output_tau = min(max_available_torque, abs(tau))
-            print(f"output_tau: {output_tau}")
-            if abs(tau) < 0 and output_tau > 0:
-                print(f"tau: {tau} is negative and output_tau: {output_tau} is positive")
+            # print(f"output_tau: {output_tau}")
+            # if abs(tau) < 0 and output_tau > 0:
+            #     print(f"tau: {tau} is negative and output_tau: {output_tau} is positive")
             return output_tau * np.sign(tau)
         
         return motor_torque_speed
@@ -91,7 +91,7 @@ class MotorModel:
         error_v = target_omega - state['omega']
         error_i = state['error_i'] + error_v * dt
         tau_out = params['I'] * error_i + params['D'] * error_v
-        #tau_out = params['torque_speed'](state['omega'], tau_out)
+        tau_out = params['torque_speed'](state['omega'], tau_out)
         alpha = tau_out / params['inertia']
         omega = state['omega'] + alpha * dt
         theta = state['theta'] + omega * dt
@@ -119,7 +119,7 @@ def optimize_pid_params(time_range, P_range, D_range, I_range, params, state, ti
     best_state_info_array = {}
     best_params = params
     best_final_error = np.inf
-    time_range = np.flip(time_range)
+    best_final_vel = np.inf
     for time in time_range:
         for P in P_range:
             for D in D_range:
@@ -130,12 +130,14 @@ def optimize_pid_params(time_range, P_range, D_range, I_range, params, state, ti
                     test_params['I'] = I
                     state_info_array = test_motor_model(test_params, state, time_step, time)
                     final_error = abs(state_info_array['error_p'][-1])
-                    print(f"Test params: P={P}, D={D}, I={I}, time={time}, final_error={final_error}", end = " - ")
-                    if final_error < best_final_error:
+                    final_vel = abs(state_info_array['error_v'][-1])
+                    # print(f"Test params: P={P}, D={D}, I={I}, time={time}, final_error={final_error}", end = " - ")
+                    if final_error < best_final_error and best_final_error > 0.05 * params['target_theta'] and final_vel < best_final_vel and best_final_vel > 0.05:
                         best_final_error = final_error
                         best_params = test_params
                         best_state_info_array = state_info_array
-                        print(f"New best params: P={P}, D={D}, I={I}, time={time}, final_error={final_error}")
+                        best_final_vel = final_vel
+                        # print(f"New best params: P={P}, D={D}, I={I}, time={time}, final_error={final_error}")
                         
     print(f"Best params: P={best_params['P']}, D={best_params['D']}, I={best_params['I']}, final_error={best_final_error}")
     return best_params, best_state_info_array
@@ -148,14 +150,26 @@ if __name__ == "__main__":
     params = MotorModel.make_params(0, 0.1, torque_speed_function, 0.001, 0, 191, 1, 26)
     
     import matplotlib.pyplot as plt
+    import time
     
     time_step = 0.001
     simulation_length = 5
     num_steps = int(simulation_length / time_step)
     cur_time = 0
     
-    #best_params, best_state_info_array = optimize_pid_params(np.arange(0.1, 1, 0.1), np.arange(185, 200, 1), np.arange(0.1, 3, .1), np.arange(21, 30, 0.5), params, state, time_step)
-    best_state_info_array = test_motor_model(params, state, time_step, simulation_length)
+    time_range = np.arange(0.1, 1, 0.1)
+    total_sim_time = sum(time_range) / time_step
+    P_range = np.arange(0.1, 30, 5)
+    I_range = np.arange(0, 10, 1)
+    D_range = np.arange(0.01, 0.3, .05)
+    rough_time_est = total_sim_time * len(P_range) * len(I_range) * len(D_range) * 1.1259823375278045e-05
+    print(f"Rough time estimate: {rough_time_est}s")
+    start_time = time.time()
+    best_params, best_state_info_array = optimize_pid_params(time_range, P_range, D_range, I_range, params, state, time_step)
+    #best_state_info_array = test_motor_model(params, state, time_step, simulation_length)
+    total_time_taken = time.time() - start_time
+    time_per_step = total_time_taken / rough_time_est
+    print(f"Time per step {time_per_step}")
     
     # Create vertical subplots for theta, omega, and tau_out
     fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1, figsize=(10, 8))
