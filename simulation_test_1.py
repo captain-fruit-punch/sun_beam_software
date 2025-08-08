@@ -94,7 +94,7 @@ def simulate_data_with_animation():
     
     # Initial state
     motor_state = MotorModel.make_state(0,0,0)
-    motor_params = MotorModel.make_params(0, 2, [], 0.001, 0, 191, 0.2, 26)
+    motor_params = MotorModel.make_params(0, 2, MotorModel.make_motor_torque_speed(1000 * 2 * np.pi / 60, 1), 0.001, 0, 20.0, 0.05, 0.84)
     
     state = WindTurbineBlade.make_state(
         A=np.array([0.0, 0.0, 0.0]),
@@ -105,6 +105,7 @@ def simulate_data_with_animation():
     
     # Simulation parameters
     params = WindTurbineBlade.make_params(
+        time=0,
         V_inf=np.array([4.4, 0.0, 0.0]),
         rho_inf=1.2,
         c_len=0.1,
@@ -114,14 +115,16 @@ def simulate_data_with_animation():
         motor_params=motor_params
     )
     
+    state_info_array = {}
     motor_state_info_array = {}
     
-    dt = 0.001
+    dt = 0.02
     seconds = 40
     steps = int(seconds / dt)
     
     # Running average parameters
-    window_size = 100  # Number of points for running average
+    window_duration = 10
+    window_size = int(window_duration / dt)
     power_history = []  # Store power values for running average calculation
     power_avg_history = []  # Store running average values
     power_avg_times = []  # Store times for running average
@@ -138,6 +141,7 @@ def simulate_data_with_animation():
         # Store previous state for force calculation
         prev_state = state.copy()
         params['motor_params']['time'] = current_time
+        params['time'] = current_time
         # Update simulation
         corrected_angle_command = params['angle_command']
         if True:
@@ -146,41 +150,37 @@ def simulate_data_with_animation():
             for z in np.linspace(-90, 90, 20):
                 test_params = params.copy()
                 test_params['angle_command'] = z * np.pi / 180
-                _, state_information_optimized = WindTurbineBlade.step(state.copy(), dt, test_params)
-                new_value = state_information_optimized['T'][2]
+                _, state_information_optimized = WindTurbineBlade.step(state.copy(), dt, test_params, simulate_motor=False)
+                new_value = state_information_optimized['T']
                 if new_value > best_value:
                     best_value = new_value
                     best_angle_command = z * np.pi / 180
             corrected_angle_command = best_angle_command
             
         params['angle_command'] = corrected_angle_command
+        # Use RK4 for higher accuracy
+        params['integrator'] = 'rk4'
+        params['motor_params']['integrator'] = 'rk4'
         
         state, state_information = WindTurbineBlade.step(state.copy(), dt, params)
-
+        # Add derived fields to state_information before copying to arrays
+        state_information['angle_command'] = params['angle_command'] * 180 / np.pi
+        state_info_array = WindTurbineBlade.copy_state_info_to_array(state_information, state_info_array)
         #print(state_information['motor_state_info'])
         motor_state_info_array = MotorModel.copy_state_info_to_array(state_information['motor_state_info'], motor_state_info_array)
-
-        # Add time to state_information for dataframe
-        state_information['angle_command'] = params['angle_command'] * 180 / np.pi
-        state_information['time'] = current_time
-        df = df._append(state_information, ignore_index=True)
-        
-        # Update plots using dataframe data (only show last 1000 points to prevent memory issues)
-        if len(df) > steps:
-            df = df.tail(steps)
         
         # Update all plots with dataframe data
-        if len(df) > 0:
+        if len(state_info_array) > 0:
             #print(motor_state_info_array)
-            torque_curve.setData(df['time'], df['T'].apply(lambda x: x[2]))
-            cd_curve.setData(df['time'], df['C_d'])
-            cl_curve.setData(df['time'], df['C_l'])
-            aoa_curve.setData(df['time'], df['aoa'] * 180 / np.pi)
-            angle_command_curve.setData(df['time'], df['angle_command'])
+            torque_curve.setData(state_info_array['time'], state_info_array['T'])
+            cd_curve.setData(state_info_array['time'], state_info_array['C_d'])
+            cl_curve.setData(state_info_array['time'], state_info_array['C_l'])
+            aoa_curve.setData(state_info_array['time'], np.array(state_info_array['aoa']) * 180 / np.pi)
+            angle_command_curve.setData(state_info_array['time'], state_info_array['angle_command'])
             motor_theta_curve.setData(motor_state_info_array['time'], np.array(motor_state_info_array['theta']) * (180 / np.pi))
-            angular_velocity_curve.setData(df['time'], df['omega'])
-            power_curve.setData(df['time'], df['power'])
-            motor_torque_curve.setData(motor_state_info_array['time'], np.array(motor_state_info_array['error_v']))
+            angular_velocity_curve.setData(state_info_array['time'], state_info_array['omega'])
+            power_curve.setData(state_info_array['time'], state_info_array['power'])
+            motor_torque_curve.setData(motor_state_info_array['time'], np.array(motor_state_info_array['tau_out']))
             
             # Calculate and plot running average of power
             power_history.append(state_information['power'])
@@ -220,7 +220,7 @@ def simulate_data_with_animation():
         
         # Add angular velocity indicator at point A
         viz.add_force(body_A, 0, state_information['omega'], 'cyan', 1, "ω")
-        viz.add_force(body_A, 0, state_information['alpha'], 'red', 1, "α")
+        viz.add_force(body_A, 0, state_information['alpha'][2], 'red', 1, "α")
         
         force_scale = 1
         viz.add_force(body_B, state_information['L'][0], state_information['L'][1], 'red', force_scale, "L")
@@ -242,7 +242,7 @@ def simulate_data_with_animation():
         # Process Qt events to keep the window responsive
         viz.app.processEvents()
     
-    return state, state_information, viz, df, combined_win
+    return state, state_information, viz, state_info_array, combined_win
 
 
 def plot_cd_cl_vs_aoa():
@@ -262,7 +262,7 @@ if __name__ == "__main__":
     # plot_cd_cl_vs_aoa()
     
     # Run the animated simulation
-    final_state, final_state_info, viz, df, combined_win = simulate_data_with_animation()
+    final_state, final_state_info, viz, state_info_array, combined_win = simulate_data_with_animation()
     print(f"\nFinal angular velocity: {final_state['omega']}")
     
     # Keep the windows open
