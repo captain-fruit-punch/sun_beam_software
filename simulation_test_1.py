@@ -118,7 +118,7 @@ def simulate_data_with_animation():
     state_info_array = {}
     motor_state_info_array = {}
     
-    dt = 0.02
+    dt = 0.01
     seconds = 40
     steps = int(seconds / dt)
     
@@ -162,7 +162,7 @@ def simulate_data_with_animation():
         params['integrator'] = 'rk4'
         params['motor_params']['integrator'] = 'rk4'
         
-        state, state_information = WindTurbineBlade.step(state.copy(), dt, params)
+        state, state_information = WindTurbineBlade.step(state.copy(), dt, params, simulate_motor=True)
         # Add derived fields to state_information before copying to arrays
         state_information['angle_command'] = params['angle_command'] * 180 / np.pi
         state_info_array = WindTurbineBlade.copy_state_info_to_array(state_information, state_info_array)

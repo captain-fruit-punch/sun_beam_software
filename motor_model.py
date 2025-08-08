@@ -9,7 +9,7 @@ class MotorModel:
         }
         return new_state
     
-    def make_params(time, target_theta, torque_speed, inertia, input_torque, P, D, I):
+    def make_params(time, target_theta, torque_speed, inertia, input_torque, P, D, I, c=0):
         new_params = {
             'time': time,
             'target_theta': target_theta,
@@ -18,7 +18,8 @@ class MotorModel:
             'input_torque': input_torque,
             'P': P,
             'D': D,
-            'I': I
+            'I': I,
+            'c': c
         }
         return new_params
         
@@ -101,8 +102,10 @@ class MotorModel:
         error_v = target_omega - state['omega']
         # Control signal before motor limits
         control_tau = params['I'] * state['error_i'] + params['D'] * error_v
+        # viscous damping
+        damping_tau = params['c'] * state['omega'] * -1
         # Apply torque-speed saturation/limits
-        tau_out = params['torque_speed'](state['omega'], control_tau)
+        tau_out = params['torque_speed'](state['omega'], control_tau + damping_tau) + damping_tau
         alpha = tau_out / params['inertia']
         theta_dot = state['omega']
         omega_dot = alpha
@@ -244,19 +247,19 @@ def optimize_pid_params(P_range, D_range, I_range, params, state, time_step, sim
 
 def dual_resolution_optimize(torque_speed_function, inertia, target_theta):
     state = MotorModel.make_state(0,0,0)
-    params = MotorModel.make_params(0, target_theta, torque_speed_function, inertia, 0, 13.599999999999987, 0.04, 0.0)
+    params = MotorModel.make_params(0, target_theta, torque_speed_function, inertia, 0, 13.599999999999987, 0.04, 0.0, 0.000025)
     
     import matplotlib.pyplot as plt
     import time
     
-    time_step = 0.01
+    time_step = 0.001
     simulation_length = 1
     
     # Graular search for best params
     total_sim_time = simulation_length / time_step
     P_resolution = 20
     I_resolution = 0.2
-    D_resolution = 0.05
+    D_resolution = 0.1
     P_range = np.arange(0, 200, P_resolution)
     I_range = np.arange(0, 2, I_resolution)
     D_range = np.arange(0, 0.5, D_resolution)
@@ -328,7 +331,7 @@ def optimize_and_plot():
     max_rpm = 1000 * 2 * np.pi / 60
     max_torque = 0.1
     torque_speed_function = MotorModel.make_motor_torque_speed(max_rpm, max_torque)
-    params = MotorModel.make_params(0, 2, MotorModel.make_motor_torque_speed(max_rpm, max_torque), 0.001, 0, 13.599999999999987, 0.04, 0.0)
+    params = MotorModel.make_params(0, 2, MotorModel.make_motor_torque_speed(max_rpm, max_torque), 0.0001, 0, 13.599999999999987, 0.04, 0.0)
     
     import matplotlib.pyplot as plt
     import time
@@ -391,9 +394,9 @@ def optimize_and_plot():
 def test_motor_model_and_plot():
     state = MotorModel.make_state(0,0,0)
     max_rpm = 1000 * 2 * np.pi / 60
-    max_torque = 0.1
+    max_torque = 0.10
     torque_speed_function = MotorModel.make_motor_torque_speed(max_rpm, max_torque)
-    params = MotorModel.make_params(0, 2, MotorModel.make_motor_torque_speed(max_rpm, max_torque), 0.001, 0, 13.599999999999987, 0.04, 0.0)
+    params = MotorModel.make_params(0, 2, MotorModel.make_motor_torque_speed(max_rpm, max_torque), 0.0001, 0, 13.599999999999987, 0.04, 0.0)
     
     import matplotlib.pyplot as plt
     import time
@@ -444,4 +447,4 @@ def test_motor_model_and_plot():
     plt.show()
 
 if __name__ == "__main__":
-    dual_resolution_optimize(MotorModel.make_motor_torque_speed(1000 * 2 * np.pi / 60, 1), 0.001, 2)
+    dual_resolution_optimize(MotorModel.make_motor_torque_speed(1000 * 2 * np.pi / 60, 1), 0.00001, 2)
